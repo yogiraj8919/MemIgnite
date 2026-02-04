@@ -3,6 +3,7 @@ mod handler;
 mod command;
 mod parser;
 mod store;
+mod aof;
 
 #[tokio::main]
 async fn main() {

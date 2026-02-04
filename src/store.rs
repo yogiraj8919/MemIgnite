@@ -3,6 +3,8 @@
 use std::{ collections::HashMap, sync::Arc, time::{Instant,Duration}};
 
 
+
+
 use tokio::sync::RwLock;
 
 
@@ -49,6 +51,23 @@ impl Store {
     pub async fn del(&self, key:&str) -> bool{
         let mut map = self.inner.write().await;
         map.remove(key).is_some()
+    }
+
+    pub async fn apply_raw(&self,input:&str){
+        use crate::parser::parse_command;
+        use crate::command::Command;
+
+        match parse_command(input) {
+            Command::Set { key, value, ex } => {
+                let ttl = ex.map(Duration::from_secs);
+                self.set(key, value, ttl).await;
+            }
+            Command::Del { key }=> {
+                self.del(&key).await;
+            }
+            _ =>{}
+        }
+
     }
 
 }

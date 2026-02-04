@@ -3,11 +3,13 @@ use tokio::{
     net::TcpStream,
 };
 
-use std::time::Duration;
+use tokio::sync::Mutex;
 
-use crate::{command::Command, parser, store::Store};
+use std::{sync::{Arc}, time::Duration};
 
-pub async fn handle_client(socket: TcpStream,store:Store) -> Result<(), Box<dyn std::error::Error>> {
+use crate::{aof::Aof, command::Command, parser, store::Store};
+
+pub async fn handle_client(socket: TcpStream,store:Store,aof:Arc<Mutex<Aof>>) -> Result<(), Box<dyn std::error::Error>> {
     let (reader, mut writer) = socket.into_split();
     let mut reader = BufReader::new(reader);
 
@@ -27,7 +29,9 @@ pub async fn handle_client(socket: TcpStream,store:Store) -> Result<(), Box<dyn 
         match cmd {
             Command::Set { key, value,ex } =>{
                 let ttl = ex.map(Duration::from_secs);
-                store.set(key,value,ttl).await;
+                store.set(key.clone(),value.clone(),ttl).await;
+                let mut aof = aof.lock().await;
+                aof.append(&format!("SET {} {}",key,value))?;
                 writer.write_all(b"OK\n").await?;
             }
             Command::Get { key } =>{
@@ -40,6 +44,10 @@ pub async fn handle_client(socket: TcpStream,store:Store) -> Result<(), Box<dyn 
             }
             Command::Del { key } => {
                 let deleted = store.del(&key).await;
+                if deleted{
+                    let mut aof = aof.lock().await;
+                    aof.append(&format!("DEL {}",key))?;
+                }
                 writer.write_all(format!("{}\n",deleted as u8).as_bytes()).await?;
             }
             Command::Ping => {
