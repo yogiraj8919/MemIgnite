@@ -15,6 +15,7 @@ pub fn parse_command(input:&str) -> Command{
     let cmd = parts.next().unwrap().to_uppercase();
     match cmd.as_str() {
         "PING" => Command::Ping,
+        "HELP" => Command::Help,
         "SET" => {
             let key = match parts.next() {
                 Some(k) => k.to_string(),

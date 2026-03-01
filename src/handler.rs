@@ -15,8 +15,30 @@ pub async fn handle_client(socket: TcpStream,store:Store,aof:Arc<Mutex<Aof>>) ->
 
     let mut line = String::new();
 
+    
+let banner = r#"
+=============================================================
+ ███╗   ███╗███████╗███╗   ███╗██╗ ██████╗ ███╗   ██╗██╗████████╗███████╗
+ ████╗ ████║██╔════╝████╗ ████║██║██╔════╝ ████╗  ██║██║╚══██╔══╝██╔════╝
+ ██╔████╔██║█████╗  ██╔████╔██║██║██║  ███╗██╔██╗ ██║██║   ██║   █████╗
+ ██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║██║██║   ██║██║╚██╗██║██║   ██║   ██╔══╝
+ ██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║██║╚██████╔╝██║ ╚████║██║   ██║   ███████╗
+ ╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝   ╚═╝   ╚══════╝
+
+                  MemIgnite v0.1.0
+          In-Memory High Performance KV Engine
+=============================================================
+
+Type 'help' to see available commands.
+
+"#;
+    writer.write(banner.as_bytes()).await?;
+
     loop {
+        
         line.clear();
+        writer.write_all("🧠 MemIgnite>".as_bytes()).await?;
+        
 
         let n = reader.read_line(&mut line).await?;
         if n == 0 {
@@ -59,6 +81,36 @@ pub async fn handle_client(socket: TcpStream,store:Store,aof:Arc<Mutex<Aof>>) ->
                     aof.append(&format!("DEL {}",key))?;
                 }
                 writer.write_all(format!("{}\n",deleted as u8).as_bytes()).await?;
+            }
+            Command::Help =>{
+                let help_text = r#"
+==================== MemIgnite Command Reference ====================
+
+PING
+    → Check server availability
+
+ECHO <message>
+    → Echo back the provided message
+
+SET <key> <value> [EX <seconds>] 
+    → Set a key with optional expiration
+
+GET <key>
+    → Retrieve value of a key
+
+DEL <key>
+    → Delete a key
+
+HELP
+    → Show this help message
+
+QUIT
+    → Close the connection
+
+======================================================================
+
+"#;
+                writer.write_all(help_text.as_bytes()).await?;
             }
             Command::Ping => {
                 writer.write_all(b"PONG\n").await?;
