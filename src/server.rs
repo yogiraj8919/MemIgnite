@@ -6,9 +6,9 @@ use crate::{aof::{Aof}, handler, store::Store};
 
 
 
-pub async fn run(addr : &str) -> Result<(),Box<dyn std::error::Error>>{
+pub async fn run(addr : &str, store:Store) -> Result<(),Box<dyn std::error::Error>>{
     let listener = TcpListener::bind(addr).await?;
-    let store = Store::new();
+  
     let aof = Arc::new(Mutex::new(Aof::new("appendonly.aof")?));
 
     
