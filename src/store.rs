@@ -1,6 +1,6 @@
 // Store module for mini_redis
 
-use std::{ sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{ cmp::Ordering, collections::BinaryHeap, sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use tokio::time::interval;
 
@@ -11,7 +11,8 @@ use dashmap::{DashMap};
 
 #[derive(Clone)]
 pub struct Store{
-    inner:Arc<DashMap<String,Entry>>
+    inner:Arc<DashMap<String,Entry>>,
+    expirations:Arc<Mutex<BinaryHeap<EntryItem>>>
 }
 
 struct Entry{
@@ -20,10 +21,37 @@ struct Entry{
 }
 
 
+#[derive(Debug)]
+struct EntryItem{
+    expires_at: u64,
+    key:String
+}
+
+impl Ord for EntryItem{
+    fn cmp(&self,other:&Self) -> Ordering{
+        other.expires_at.cmp(&self.expires_at)
+    }
+}
+
+impl PartialOrd for EntryItem {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for EntryItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.expires_at == other.expires_at
+    }
+}
+
+impl Eq for EntryItem {}
+
 impl Store {
      pub fn new() -> Self{
         Store{
-            inner : Arc::new(DashMap::new())
+            inner : Arc::new(DashMap::new()),
+            expirations:Arc::new(Mutex::new(BinaryHeap::new()))
         }
     }
 
@@ -37,7 +65,11 @@ impl Store {
                 .as_secs() + d.as_secs()
         });
      
-        self.inner.insert(key,Entry { value, expires_at });
+        self.inner.insert(key.clone(),Entry { value, expires_at });
+        if let Some(expire) = expires_at {
+            let mut heap = self.expirations.lock().unwrap();
+            heap.push(EntryItem { expires_at:expire, key });
+        }
     }
 
     pub async fn get(&self,key:&str) -> Option<String>{
@@ -53,10 +85,7 @@ impl Store {
                     self.inner.remove(key);
                     return None;
                 }
-               
             }
-  
-
             return Some(entry.value.clone());
         }
         None
@@ -69,27 +98,30 @@ impl Store {
 
     pub fn start_expiration_task(self){
         tokio::spawn(async move {
-            let mut ticker = interval(Duration::from_secs(5));
+            let mut ticker = interval(Duration::from_secs(1));
             loop{
                 ticker.tick().await;
                 let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            
+                
+                loop{
+                    let mut heap = self.expirations.lock().unwrap();
+                    let item = match heap.peek(){
+                        Some(item) if item.expires_at <= now => heap.pop().unwrap(),
+                        _ => break
+                    };
+                    drop(heap);
 
-            let key_to_remove:Vec<String> = self.inner.iter().filter_map(|entry|{
-                if let Some(expire) = entry.expires_at{
-                    if now >= expire{
-                        return Some(entry.key().clone());
-                    }
+                    if let Some(entry) = self.inner.get(&item.key){
+                        if entry.expires_at == Some(item.expires_at){
+                            drop(entry);
+                            self.inner.remove(&item.key);
+                        }
+                    } 
                 }
-                None
-            })
-            .collect();
-        for key in key_to_remove {
-            self.inner.remove(&key);
-        }
+            
             }
         });
     }
