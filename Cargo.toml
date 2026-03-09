@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 thiserror = "1"
+dashmap = "6"

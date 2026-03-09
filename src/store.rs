@@ -1,16 +1,17 @@
 // Store module for mini_redis
+
+use std::{ sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
+
 use tokio::time::interval;
-use std::{ collections::{HashMap}, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 
+use dashmap::{DashMap};
 
-
-use tokio::sync::RwLock;
 
 
 #[derive(Clone)]
 pub struct Store{
-    inner:Arc<RwLock<HashMap<String,Entry>>>
+    inner:Arc<DashMap<String,Entry>>
 }
 
 struct Entry{
@@ -22,12 +23,12 @@ struct Entry{
 impl Store {
      pub fn new() -> Self{
         Store{
-            inner : Arc::new(RwLock::new(HashMap::new()))
+            inner : Arc::new(DashMap::new())
         }
     }
 
     pub async fn set(&self,key:String,value:String,ttl:Option<Duration>){
-        let mut map = self.inner.write().await;
+    
 
         let expires_at = ttl.map(|d| {
             SystemTime::now()
@@ -36,19 +37,20 @@ impl Store {
                 .as_secs() + d.as_secs()
         });
      
-        map.insert(key,Entry { value, expires_at });
+        self.inner.insert(key,Entry { value, expires_at });
     }
 
     pub async fn get(&self,key:&str) -> Option<String>{
-        let mut  map = self.inner.write().await;
+
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
            .as_secs();
         
-        if let Some(entry) = map.get(key){
+        if let Some(entry) = self.inner.get(key){
             if let Some(expire) = entry.expires_at{
                 if now >= expire{
+                    drop(entry); 
                     //expired -> delete
-                    map.remove(key);
+                    self.inner.remove(key);
                     return None;
                 }
                
@@ -61,8 +63,8 @@ impl Store {
     }
 
     pub async fn del(&self, key:&str) -> bool{
-        let mut map = self.inner.write().await;
-        map.remove(key).is_some()
+       
+        self.inner.remove(key).is_some()
     }
 
     pub fn start_expiration_task(self){
@@ -74,19 +76,19 @@ impl Store {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            let mut map = self.inner.write().await;
+            
 
-            let key_to_remove:Vec<String> = map.iter().filter_map(|(key,entry)|{
+            let key_to_remove:Vec<String> = self.inner.iter().filter_map(|entry|{
                 if let Some(expire) = entry.expires_at{
                     if now >= expire{
-                        return Some(key.clone());
+                        return Some(entry.key().clone());
                     }
                 }
                 None
             })
             .collect();
         for key in key_to_remove {
-            map.remove(&key);
+            self.inner.remove(&key);
         }
             }
         });
