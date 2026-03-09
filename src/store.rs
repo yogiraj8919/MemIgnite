@@ -1,5 +1,3 @@
-// Store module for mini_redis
-
 use std::{ cmp::Ordering, collections::BinaryHeap, sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use tokio::time::interval;
@@ -14,6 +12,8 @@ pub struct Store{
     inner:Arc<DashMap<String,Entry>>,
     expirations:Arc<Mutex<BinaryHeap<EntryItem>>>
 }
+
+
 
 struct Entry{
     value:String,
@@ -46,6 +46,7 @@ impl PartialEq for EntryItem {
 }
 
 impl Eq for EntryItem {}
+
 
 impl Store {
      pub fn new() -> Self{
@@ -83,9 +84,15 @@ impl Store {
                     drop(entry); 
                     //expired -> delete
                     self.inner.remove(key);
+                    // Remove from heap
+                    let mut heap = self.expirations.lock().unwrap();
+                    heap.retain(|item| item.key != key);
                     return None;
                 }
+               
             }
+  
+
             return Some(entry.value.clone());
         }
         None
@@ -93,7 +100,12 @@ impl Store {
 
     pub async fn del(&self, key:&str) -> bool{
        
-        self.inner.remove(key).is_some()
+        let removed = self.inner.remove(key).is_some();
+        if removed {
+            let mut heap = self.expirations.lock().unwrap();
+            heap.retain(|item| item.key != key);
+        }
+        removed
     }
 
     pub fn start_expiration_task(self){
@@ -105,7 +117,8 @@ impl Store {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-                
+            
+
                 loop{
                     let mut heap = self.expirations.lock().unwrap();
                     let item = match heap.peek(){
