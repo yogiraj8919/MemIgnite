@@ -2,6 +2,8 @@
 
 
 
+use std::collections::btree_map::Keys;
+
 use crate::command::Command;
 
 pub fn parse_command(input:&str) -> Command{
@@ -66,6 +68,15 @@ pub fn parse_command(input:&str) -> Command{
                 None => return Command::Unknown("DEL missing key".to_string())
             };
             Command::Del { key } 
+        }
+        "LPUSH" => {
+            let key = parts.next().unwrap().to_string();
+            let value = parts.next().unwrap().to_string();
+            Command::LPUSH { key, value }
+        }
+        "RDROP" =>{
+            let key = parts.next().unwrap().to_string();
+            Command::RDROP { key }
         }
         "ECHO" => Command::Echo(parts.collect::<Vec<_>>().join(" ")),
         "QUIT" => Command::Quit,

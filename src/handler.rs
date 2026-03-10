@@ -123,6 +123,18 @@ QUIT
                 writer.write_all(b"BYE\n").await?;
                 break;
             }
+            Command::LPUSH { key, value } =>{
+                let len = store.lpush(key, value).await;
+                writer.write_all(format!("{}\n",len).as_bytes()).await?;
+            }
+            Command::RDROP { key }=>{
+                if let Some(val) = store.rdrop(&key).await{
+                    writer.write_all(val.as_bytes()).await?;
+                    writer.write_all(b"\n").await?;
+                }else{
+                     writer.write_all(b"{nil}\n").await?;
+                }
+            }
             Command::Unknown(name) => {
                 writer
                     .write_all(format!("ERR unknown command: {}\n", name).as_bytes())

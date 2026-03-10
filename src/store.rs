@@ -1,4 +1,4 @@
-use std::{ cmp::Ordering, collections::BinaryHeap, sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{ cmp::Ordering, collections::{BinaryHeap, VecDeque}, sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use tokio::time::interval;
 
@@ -13,10 +13,15 @@ pub struct Store{
     expirations:Arc<Mutex<BinaryHeap<EntryItem>>>
 }
 
+#[derive(Clone)]
+enum Value{
+    String(String),
+    List(VecDeque<String>)
+}
 
 
 struct Entry{
-    value:String,
+    value:Value,
     expires_at:Option<u64>
 }
 
@@ -66,11 +71,40 @@ impl Store {
                 .as_secs() + d.as_secs()
         });
      
-        self.inner.insert(key.clone(),Entry { value, expires_at });
+        self.inner.insert(key.clone(),Entry { value:Value::String(value), expires_at });
         if let Some(expire) = expires_at {
             let mut heap = self.expirations.lock().unwrap();
             heap.push(EntryItem { expires_at:expire, key });
         }
+    }
+
+    pub async fn lpush(&self,key:String, value:String) -> usize{
+      if let Some(mut entry) = self.inner.get_mut(&key){
+        match &mut entry.value{
+            Value::List(list)=>{
+                list.push_front(value);
+                return list.len();
+            },
+            _ => return 0
+        }
+      }else{
+        let mut new_list = VecDeque::new();
+        new_list.push_front(value);
+        self.inner.insert(key, Entry { value: Value::List(new_list), expires_at: None },);
+        return 1;
+      }
+    }
+
+    pub async fn rdrop(&self,key:&str) -> Option<String>{
+        if let Some(mut entry) = self.inner.get_mut(key){
+            match &mut entry.value {
+                Value::List(list) => {
+                    return list.pop_back();
+                }
+               _ => return None
+            }
+        }
+        None
     }
 
     pub async fn get(&self,key:&str) -> Option<String>{
@@ -93,7 +127,12 @@ impl Store {
             }
   
 
-            return Some(entry.value.clone());
+            match &entry.value{
+                Value::String(s) => {
+                    return Some(s.clone());
+                }
+                Value::List(_)=>return None
+            }
         }
         None
     }
