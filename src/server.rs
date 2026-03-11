@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-// Server module for mini_redis
 use tokio::{net::TcpListener, sync::Mutex};
 use crate::{aof::{Aof}, handler, store::Store};
 
@@ -8,7 +7,7 @@ use crate::{aof::{Aof}, handler, store::Store};
 
 pub async fn run(addr : &str, store:Store) -> Result<(),Box<dyn std::error::Error>>{
     let listener = TcpListener::bind(addr).await?;
-  
+
     let aof = Arc::new(Mutex::new(Aof::new("appendonly.aof")?));
 
     

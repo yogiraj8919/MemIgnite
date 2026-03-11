@@ -51,8 +51,9 @@ Type 'help' to see available commands.
         match cmd {
             Command::Set { key, value,ex,.. } =>{
                 let ttl = ex.map(Duration::from_secs);
-                store.set(key.clone(),value.clone(),ttl).await;
                 let mut aof = aof.lock().await;
+               
+                
                 if let Some(sec) = ex{
                     let now = SystemTime::now()
                        .duration_since(UNIX_EPOCH)
@@ -63,6 +64,9 @@ Type 'help' to see available commands.
                 }else {
                      aof.append(&format!("SET {} {}", key, value))?;
                 }
+                drop(aof);
+
+                 store.set(key.clone(),value.clone(),ttl).await;
                
                 writer.write_all(b"OK\n").await?;
             }
@@ -75,12 +79,11 @@ Type 'help' to see available commands.
                 }
             }
             Command::Del { key } => {
+                let mut aof = aof.lock().await;
+                aof.append(&format!("DEL {}",key))?;
+                drop(aof);
                 let deleted = store.del(&key).await;
-                if deleted{
-                    let mut aof = aof.lock().await;
-                    aof.append(&format!("DEL {}",key))?;
-                }
-                writer.write_all(format!("{}\n",deleted as u8).as_bytes()).await?;
+                 writer.write_all(format!("{}\n", deleted as u8).as_bytes()).await?;
             }
             Command::Help =>{
                 let help_text = r#"

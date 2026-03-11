@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use mini_redis::store::Store;
+    use MemIgnite::store::Store;
     use std::time::Duration;
     use tokio::time::sleep;
 

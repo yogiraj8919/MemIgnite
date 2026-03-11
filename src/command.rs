@@ -1,4 +1,3 @@
-// Command module for mini_redis
 #[derive(Debug)]
 pub enum Command {
     Ping,
