@@ -23,3 +23,9 @@ SET name raj EXAT 1773081042
 SET name raj EXAT 1773144699
 SET name sai
 SET name raj EXAT 1773223252
+SET name 10
+SET name raj
+LPUSH list a
+LPUSH list b
+LPUSH list c
+RDROP list

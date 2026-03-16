@@ -127,10 +127,16 @@ QUIT
                 break;
             }
             Command::LPUSH { key, value } =>{
+                let mut aof = aof.lock().await;
+                aof.append(&format!("LPUSH {} {}",key,value))?;
+                drop(aof);
                 let len = store.lpush(key, value).await;
                 writer.write_all(format!("{}\n",len).as_bytes()).await?;
             }
             Command::RDROP { key }=>{
+                let mut aof = aof.lock().await;
+                aof.append(&format!("RDROP {}",key))?;
+                drop(aof);
                 if let Some(val) = store.rdrop(&key).await{
                     writer.write_all(val.as_bytes()).await?;
                     writer.write_all(b"\n").await?;
