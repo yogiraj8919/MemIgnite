@@ -206,7 +206,7 @@ Benefits:
 
 • Reduced disk usage
 • Faster database startup
-• Removal of redundant operations
+• Removes redundant operations
 
 ---
 
@@ -262,13 +262,30 @@ git clone <repo-url>
 cd memignite
 ```
 
-### Start server
+### Start the server
 
 ```id="run2"
 cargo run
 ```
 
-The MemIgnite CLI will start and accept commands.
+### Connect to the database (client)
+
+After starting the server, connect using **netcat**:
+
+```id="run3"
+nc 127.0.0.1 6379
+```
+
+You can now run commands in the MemIgnite CLI.
+
+Example:
+
+```id="run4"
+SET name raj
+GET name
+LPUSH users alice
+REWRITEAOF
+```
 
 ---
 
