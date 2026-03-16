@@ -1,6 +1,10 @@
-use std::fs::{OpenOptions, File};
-use std::io::{BufRead, BufReader, Write};
+use std::fs::{OpenOptions, File,rename};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
+
+
+
+use crate::store::{Store};
 
 
 pub struct Aof{
@@ -34,6 +38,35 @@ impl Aof {
             commands.push(line?);
         }
         Ok(commands)
+    }
+
+    pub fn rewrite(store:&Store) -> std::io::Result<()>{
+        let file = File::create("temp-rewrite.aof")?;
+        let mut writer = BufWriter::new(file);
+
+        for entry in store.inner.iter(){
+            let key = entry.key();
+            let val = entry.value();
+
+            match &val.value{
+
+                crate::store::Value::String(v) =>{
+                    if let Some(exp) = val.expires_at{
+                        writeln!(writer,"SET {} {} EXAT {}",key,v,exp)?;
+                    }else {
+                         writeln!(writer,"SET {} {}",key,v)?;
+                    }
+                }
+                crate::store::Value::List(list) => {
+                     for item in list {
+                    writeln!(writer,"LPUSH {} {}",key,item)?;
+                }
+                }
+            }
+        }
+        writer.flush()?;
+        rename("temp-rewrite.aof","appendonly.aof")?;
+        Ok(())
     }
 
 

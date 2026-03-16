@@ -9,5 +9,6 @@ pub enum Command {
     RDROP{key:String},
     Help,
     Quit,
-    Unknown(String)
+    Unknown(String),
+    RewriteAof
 }

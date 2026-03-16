@@ -9,20 +9,20 @@ use dashmap::{DashMap};
 
 #[derive(Clone)]
 pub struct Store{
-    inner:Arc<DashMap<String,Entry>>,
+    pub inner:Arc<DashMap<String,Entry>>,
     expirations:Arc<Mutex<BinaryHeap<EntryItem>>>
 }
 
 #[derive(Clone)]
-enum Value{
-    String(String),
+pub enum Value{
+     String(String),
     List(VecDeque<String>)
 }
 
 
-struct Entry{
-    value:Value,
-    expires_at:Option<u64>
+pub struct Entry{
+    pub value:Value,
+    pub expires_at:Option<u64>
 }
 
 

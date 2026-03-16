@@ -144,6 +144,11 @@ QUIT
                      writer.write_all(b"{nil}\n").await?;
                 }
             }
+            Command::RewriteAof => {
+                let _aof = aof.lock().await;
+                crate::aof::Aof::rewrite(&store)?;
+                writer.write_all(b"AOF rewrite completed\n").await?;
+            }
             Command::Unknown(name) => {
                 writer
                     .write_all(format!("ERR unknown command: {}\n", name).as_bytes())
