@@ -1,197 +1,301 @@
-<p align="center">
-  <img src="memignite.png" width="180" />
-</p>
+# 🧠 MemIgnite
 
-<h1 align="center">MemIgnite</h1>
-<p align="center">
-  🧠 In-Memory Key-Value Engine Built in Rust
-</p>
+**Redis-Inspired In-Memory Key-Value Database (Rust)**
 
-
-## Overview
-
-MemIgnite is a high-performance in-memory key-value database built from scratch in Rust using Tokio for async networking.
-
-It supports TTL (time-to-live), append-only persistence (AOF), restart-safe expiration recovery, and concurrent multi-client handling over raw TCP.
-
-The project focuses on correctness, concurrency safety, deterministic restart behavior, and architectural clarity.
+**Author:** Saiyogiraj
+**Language:** Rust
+**Runtime:** Tokio
 
 ---
 
-## Core Features
+# Overview
 
-- Async TCP server (Tokio runtime)
-- In-memory key-value store
-- TTL support (`EX` and `EXAT`)
-- Absolute timestamp expiration
-- Lazy expiration model
-- Append-only file (AOF) persistence
-- Deterministic state rebuild on restart
-- Concurrent client handling
-- Fully tested core logic
+**MemIgnite** is a Redis-inspired in-memory key-value database written in Rust.
+The project was built **for educational and learning purposes** to understand how modern databases are designed internally.
 
----
+The goal of this project is to explore important **systems and database engineering concepts** such as:
 
-## Architecture Overview
+* Async networking
+* Concurrent data structures
+* Key expiration strategies
+* Database persistence
+* Crash recovery
+* Log compaction
+* Storage engine architecture
 
-Client  
-↓  
-TCP Server (`tokio::net::TcpListener`)  
-↓  
-Connection Handler  
-↓  
-Command Parser  
-↓  
-Store (HashMap + TTL metadata)  
-↓  
-Append-Only Log (AOF)
+MemIgnite is not intended to replace Redis or production databases.
+Instead, it serves as a **learning project to study database internals and systems programming in Rust.**
 
 ---
 
-## TTL Design
+# Key Learning Objectives
 
-MemIgnite implements TTL using absolute expiry timestamps.
+This project was built to gain hands-on experience with:
 
-Supported options:
-- `EX <seconds>` → converted internally to absolute timestamp
-- `EXAT <unix_timestamp>`
-
-Internal model:
-- `EX` is converted to `EXAT`
-- Absolute timestamps are stored
-- On restart, remaining TTL is recalculated
-- Expired keys are skipped during AOF replay
-
-This prevents expired keys from being resurrected after restart.
+• Building an **async TCP server** using Tokio
+• Designing a **concurrent in-memory storage engine**
+• Implementing **TTL expiration mechanisms**
+• Implementing **Append-Only File (AOF) persistence**
+• Understanding **crash recovery using log replay**
+• Implementing **log compaction (AOF Rewrite)**
+• Designing modular database architecture
 
 ---
 
-## Expiration Model
+# System Architecture
 
-MemIgnite uses lazy expiration:
+MemIgnite follows a layered architecture similar to real databases.
 
-- No background cleanup thread
-- Expiration is checked during key access
-- Expired keys are deleted on `GET`
-
-This keeps the system simple and avoids unnecessary timers or scheduling overhead.
-
----
-
-## Persistence Model
-
-MemIgnite uses an append-only file (AOF):
-
-- Every write operation is appended to disk
-- On restart, commands are replayed sequentially
-- TTL state is restored deterministically
-
-### Crash Consistency Trade-Off
-
-Memory is updated before AOF append.
-
-If a crash occurs between:
-1. Memory update
-2. Log append
-
-Recent writes may be lost.
-
-This is a deliberate simplification. Production systems typically use write-ahead logging with fsync guarantees for stronger durability.
+```id="arch1"
+Client
+   │
+   ▼
+TCP Server (Tokio)
+   │
+   ▼
+Command Parser
+   │
+   ▼
+Command Handler
+   │
+   ▼
+Storage Engine
+   ├── DashMap (Concurrent Storage)
+   ├── TTL Expiration Scheduler
+   ├── Background Expiration Worker
+   └── Persistence Layer
+           │
+           ├── Append Only File (AOF)
+           └── AOF Rewrite (Log Compaction)
+```
 
 ---
 
-## Concurrency Model
+# Features Implemented
 
-MemIgnite ensures safe concurrent access using:
+## Async Networking
 
-- `Arc` for shared ownership
-- `RwLock` for concurrent reads
-- `Mutex` for serialized AOF writes
-- Async-safe locking discipline
+MemIgnite uses the **Tokio runtime** to support multiple concurrent client connections.
 
-Multiple clients can connect simultaneously without data races.
+Each connection is handled asynchronously.
 
 ---
 
-## Libraries Used
+## Concurrent Storage Engine
 
-- `tokio` – Async runtime and TCP networking
-- `std::collections::HashMap` – Core data storage
-- `Arc`, `RwLock`, `Mutex` – Concurrency primitives
-- `SystemTime`, `Duration` – TTL computation
-- Standard Rust error propagation (`Result` + `?`)
+The storage engine is built using **DashMap**, allowing concurrent reads and writes without global locking.
 
-No external database libraries were used.
+```id="store1"
+DashMap<String, Entry>
+```
 
----
+Each entry stores:
 
-## Running the Server
-
-Start the server:
-
-    cargo run
-
-Connect using:
-
-    nc 127.0.0.1 6379
-
-Example commands:
-
-    SET key value
-    SET key value EX 10
-    SET key value EXAT 1700000000
-    GET key
-    DEL key
-    PING
+```id="entry1"
+value
+optional expiration timestamp
+```
 
 ---
 
-## Tests
+# Supported Commands
 
-Core functionality is verified using:
-
-    cargo test
-
-Test coverage includes:
-- Basic set/get
-- Delete operations
-- TTL expiration
-- Lazy deletion behavior
-- Restart-safe TTL replay
-- Expired key skipping during recovery
-
----
-
-## Design Scope
-
-MemIgnite focuses on core in-memory database mechanics and correctness.
-
-It intentionally does not implement:
-
-- Replication
-- Clustering
-- Write-ahead fsync guarantees
-- Background expiration sweeper
-- Binary protocol
-- Benchmark tooling
-
-The goal of this project is architectural clarity and correctness of fundamental database behavior.
+| Command                  | Description              |
+| ------------------------ | ------------------------ |
+| SET key value            | Store key-value pair     |
+| SET key value EX seconds | Store with expiration    |
+| GET key                  | Retrieve a value         |
+| DEL key                  | Delete a key             |
+| LPUSH key value          | Push value to list       |
+| RDROP key                | Remove rightmost element |
+| PING                     | Health check             |
+| ECHO message             | Echo message             |
+| REWRITEAOF               | Compact persistence log  |
+| HELP                     | Display help             |
+| QUIT                     | Close connection         |
 
 ---
 
-## Potential Extensions
+# TTL Expiration
 
-MemIgnite can be extended with:
+Keys can expire automatically using the `EX` option.
 
-- Write-ahead logging with fsync for stronger durability
-- Active expiration sweeper
-- Replication (leader–follower)
-- Binary protocol support
-- Performance benchmarking suite
-- Memory usage optimization
+Example:
+
+```id="ttl1"
+SET session_token abc EX 60
+```
+
+Two expiration strategies are implemented:
+
+### Lazy Expiration
+
+Keys are checked for expiration during read operations.
+
+### Background Expiration Worker
+
+A periodic task removes expired keys.
 
 ---
 
-## Author
+# Persistence: Append Only File (AOF)
 
-MemIgnite was built as a systems-focused backend engineering project in Rust to explore async networking, concurrency, persistence models, and crash-consistent design.
+MemIgnite uses an **append-only persistence log**.
+
+Every write operation is appended to:
+
+```id="aof1"
+appendonly.aof
+```
+
+Example log:
+
+```id="aof2"
+SET user raj
+SET age 24
+DEL age
+LPUSH users alice
+```
+
+This ensures durability and allows crash recovery.
+
+---
+
+# Crash Recovery
+
+When the server restarts, MemIgnite **replays the AOF log** to rebuild the database state.
+
+Example replay:
+
+```id="replay1"
+SET a 1
+SET a 2
+SET a 3
+```
+
+Final state:
+
+```id="replay2"
+a = 3
+```
+
+---
+
+# AOF Rewrite (Log Compaction)
+
+Over time the AOF file grows due to repeated operations.
+
+MemIgnite supports **log compaction** using the `REWRITEAOF` command.
+
+Before rewrite:
+
+```id="rewrite1"
+SET a 1
+SET a 2
+SET a 3
+SET a 4
+```
+
+After rewrite:
+
+```id="rewrite2"
+SET a 4
+```
+
+Benefits:
+
+• Reduced disk usage
+• Faster database startup
+• Removal of redundant operations
+
+---
+
+# Example Session
+
+```id="cli1"
+SET name raj
+OK
+
+GET name
+raj
+
+LPUSH users alice
+1
+
+LPUSH users bob
+2
+
+RDROP users
+alice
+
+SET token abc EX 10
+OK
+
+REWRITEAOF
+AOF rewrite completed
+```
+
+---
+
+# Project Structure
+
+```id="structure1"
+src/
+
+main.rs        → Entry point
+server.rs      → TCP server
+handler.rs     → Command handling
+parser.rs      → Command parser
+command.rs     → Command definitions
+store.rs       → Storage engine
+aof.rs         → Persistence and log rewrite
+```
+
+---
+
+# Running the Project
+
+### Clone repository
+
+```id="run1"
+git clone <repo-url>
+cd memignite
+```
+
+### Start server
+
+```id="run2"
+cargo run
+```
+
+The MemIgnite CLI will start and accept commands.
+
+---
+
+# Educational Purpose
+
+MemIgnite is a **learning project designed to understand database internals and systems programming concepts using Rust**.
+
+It demonstrates how core database features such as persistence, concurrency, expiration, and log compaction can be implemented from scratch.
+
+The project focuses on **understanding system design and database architecture rather than production use.**
+
+---
+
+# Future Improvements
+
+Planned features include:
+
+• INFO command for server metrics
+• RESP protocol support
+• Redis CLI compatibility
+• Performance benchmarking
+• Snapshot persistence
+• Replication support
+• Memory usage metrics
+
+---
+
+# License
+
+This project is intended for **educational and learning purposes only**.
