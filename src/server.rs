@@ -1,32 +1,41 @@
-use std::sync::Arc;
 
-use tokio::{net::TcpListener, sync::Mutex};
-use crate::{aof::{Aof}, handler, store::Store};
+
+use std::{fs::File, io::{BufRead, BufReader}};
+
+use tokio::{net::TcpListener};
+use crate::{ handler, store::Store};
 
 
 
 pub async fn run(addr : &str, store:Store) -> Result<(),Box<dyn std::error::Error>>{
     let listener = TcpListener::bind(addr).await?;
 
-    let aof = Arc::new(Mutex::new(Aof::new("appendonly.aof")?));
 
     
     // replay persisted commands
-    let cmds = Aof::load("appendonly.aof")?;
-    for cmd in cmds {
-        store.apply_raw(&cmd).await;
+   
+if let Ok(file) = File::open("appendonly.aof") {
+    let reader = BufReader::new(file);
+
+    for line in reader.lines() {
+        if let Ok(cmd) = line {
+            if !cmd.trim().is_empty() {
+                store.apply_raw(&cmd).await;
+            }
+        }
     }
+}
 
     loop{
         let (socket, peer_addr) = listener.accept().await?;
         let store = store.clone();
-        let aof = aof.clone();
+        
 
 
         println!("Client connected: {}",peer_addr);
 
         tokio::spawn(async move{
-            handler::handle_client(socket, store, aof).await.ok();
+            handler::handle_client(socket, store).await.ok();
         });
 
     }

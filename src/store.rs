@@ -1,16 +1,21 @@
-use std::{ cmp::Ordering, collections::{BinaryHeap, VecDeque}, sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{cmp::Ordering, collections::{BinaryHeap, VecDeque}, sync::{Arc}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use tokio::time::interval;
 
+use tokio::sync::Mutex;
+
 
 use dashmap::{DashMap};
+
+use crate::aof::Aof;
 
 
 
 #[derive(Clone)]
 pub struct Store{
     pub inner:Arc<DashMap<String,Entry>>,
-    expirations:Arc<Mutex<BinaryHeap<EntryItem>>>
+    expirations:Arc<Mutex<BinaryHeap<EntryItem>>>,
+    pub aof: Arc<Mutex<Aof>>
 }
 
 #[derive(Clone)]
@@ -54,57 +59,89 @@ impl Eq for EntryItem {}
 
 
 impl Store {
-     pub fn new() -> Self{
+     pub fn new(aof:Arc<Mutex<Aof>>) -> Self{
         Store{
             inner : Arc::new(DashMap::new()),
-            expirations:Arc::new(Mutex::new(BinaryHeap::new()))
+            expirations:Arc::new(Mutex::new(BinaryHeap::new())),
+            aof
         }
     }
 
     pub async fn set(&self,key:String,value:String,ttl:Option<Duration>){
     
 
-        let expires_at = ttl.map(|d| {
+        self.set_internal(key.clone(), value.clone(), ttl).await;
+
+        let mut aof = self.aof.lock().await;
+
+        if let Some(expire) = ttl{
+            let expire_ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() + expire.as_secs();
+            aof.append(&format!("SET {} {} EXAT {}",key,value,expire_ts)).ok();
+        }else{
+            aof.append(&format!("SET {} {}",key,value)).ok();
+        }
+    }
+
+    async fn set_internal(&self, key:String, value:String, ttl:Option<Duration>){
+        let expires_at = ttl.map(|d|{
             SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs() + d.as_secs()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() + d.as_secs()
         });
-     
-        self.inner.insert(key.clone(),Entry { value:Value::String(value), expires_at });
+
+        self.inner.insert(key.clone(), Entry { value: Value::String(value), expires_at });
+        
         if let Some(expire) = expires_at {
-            let mut heap = self.expirations.lock().unwrap();
+            let mut heap = self.expirations.lock().await;
             heap.push(EntryItem { expires_at:expire, key });
         }
     }
 
     pub async fn lpush(&self,key:String, value:String) -> usize{
-      if let Some(mut entry) = self.inner.get_mut(&key){
+      let len = if let Some(mut entry) = self.inner.get_mut(&key){
         match &mut entry.value{
             Value::List(list)=>{
-                list.push_front(value);
-                return list.len();
-            },
-            _ => return 0
+                list.push_front(value.clone());
+                list.len()
+            }
+            _ =>  0
         }
       }else{
         let mut new_list = VecDeque::new();
-        new_list.push_front(value);
-        self.inner.insert(key, Entry { value: Value::List(new_list), expires_at: None },);
-        return 1;
-      }
+        new_list.push_front(value.clone());
+        self.inner.insert(key.clone(), Entry { value: Value::List(new_list), expires_at: None }
+        );
+         1
+      };
+
+      let mut aof = self.aof.lock().await;
+      aof.append(&format!("LPUSH {} {}",key,value)).ok();
+
+      len
+
     }
 
     pub async fn rdrop(&self,key:&str) -> Option<String>{
-        if let Some(mut entry) = self.inner.get_mut(key){
+        let result = if let Some(mut entry) = self.inner.get_mut(key){
             match &mut entry.value {
-                Value::List(list) => {
-                    return list.pop_back();
-                }
-               _ => return None
+                Value::List(list) => list.pop_back(),
+               _ =>  None
             }
+        }else{
+            None
+        };
+
+        if result.is_some(){
+            let mut aof = self.aof.lock().await;
+            aof.append(&format!("RDROP {}",key)).ok();
         }
-        None
+
+        result
+        
     }
 
     pub async fn get(&self,key:&str) -> Option<String>{
@@ -119,7 +156,7 @@ impl Store {
                     //expired -> delete
                     self.inner.remove(key);
                     // Remove from heap
-                    let mut heap = self.expirations.lock().unwrap();
+                    let mut heap = self.expirations.lock().await;
                     heap.retain(|item| item.key != key);
                     return None;
                 }
@@ -141,8 +178,11 @@ impl Store {
        
         let removed = self.inner.remove(key).is_some();
         if removed {
-            let mut heap = self.expirations.lock().unwrap();
+            let mut heap = self.expirations.lock().await;
             heap.retain(|item| item.key != key);
+
+            let mut aof = self.aof.lock().await;
+            aof.append(&format!("DEL {}",key)).ok();
         }
         removed
     }
@@ -159,7 +199,7 @@ impl Store {
             
 
                 loop{
-                    let mut heap = self.expirations.lock().unwrap();
+                    let mut heap = self.expirations.lock().await;
                     let item = match heap.peek(){
                         Some(item) if item.expires_at <= now => heap.pop().unwrap(),
                         _ => break
@@ -200,7 +240,7 @@ impl Store {
                    self.set(key, value, Some(Duration::from_secs(remaining)))
                    .await;
                }else {
-                   self.set(key, value, None).await;
+                   self.set_internal(key, value, None).await;
                }
                
 

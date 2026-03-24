@@ -5,7 +5,11 @@ mod parser;
 mod store;
 mod aof;
 
-use store::Store;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use crate::aof::{ Aof,FsyncPolicy};
+use crate::store::Store;
 
 #[tokio::main]
 async fn main() {
@@ -14,9 +18,8 @@ async fn main() {
     let addr = "127.0.0.1:6379";
     println!("MemIgnite is Listening on {}", addr);
 
-
-    let store = Store::new();
-
+    let aof = Arc::new(Mutex::new(Aof::new(FsyncPolicy::EverySec)));
+    let store = Store::new(aof.clone());
 
     store.clone().start_expiration_task();
 

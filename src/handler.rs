@@ -3,13 +3,14 @@ use tokio::{
     net::TcpStream,
 };
 
-use tokio::sync::Mutex;
+use std::io::Write;
 
-use std::{ sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{ time::Duration};
 
-use crate::{aof::Aof, command::Command, parser, store::Store};
 
-pub async fn handle_client(socket: TcpStream,store:Store,aof:Arc<Mutex<Aof>>) -> Result<(), Box<dyn std::error::Error>> {
+use crate::{ command::Command, parser, store::Store};
+
+pub async fn handle_client(socket: TcpStream,store:Store) -> Result<(), Box<dyn std::error::Error>> {
     let (reader, mut writer) = socket.into_split();
     let mut reader = BufReader::new(reader);
 
@@ -51,22 +52,8 @@ Type 'help' to see available commands.
         match cmd {
             Command::Set { key, value,ex,.. } =>{
                 let ttl = ex.map(Duration::from_secs);
-                let mut aof = aof.lock().await;
-               
-                
-                if let Some(sec) = ex{
-                    let now = SystemTime::now()
-                       .duration_since(UNIX_EPOCH)
-                       .unwrap()
-                       .as_secs();
-                    let expiry_ts = now + sec;
-                     aof.append(&format!("SET {} {} EXAT {}",key,value,expiry_ts))?;
-                }else {
-                     aof.append(&format!("SET {} {}", key, value))?;
-                }
-                drop(aof);
 
-                 store.set(key.clone(),value.clone(),ttl).await;
+                store.set(key.clone(),value.clone(),ttl).await;
                
                 writer.write_all(b"OK\n").await?;
             }
@@ -79,9 +66,6 @@ Type 'help' to see available commands.
                 }
             }
             Command::Del { key } => {
-                let mut aof = aof.lock().await;
-                aof.append(&format!("DEL {}",key))?;
-                drop(aof);
                 let deleted = store.del(&key).await;
                  writer.write_all(format!("{}\n", deleted as u8).as_bytes()).await?;
             }
@@ -127,16 +111,10 @@ QUIT
                 break;
             }
             Command::LPUSH { key, value } =>{
-                let mut aof = aof.lock().await;
-                aof.append(&format!("LPUSH {} {}",key,value))?;
-                drop(aof);
                 let len = store.lpush(key, value).await;
                 writer.write_all(format!("{}\n",len).as_bytes()).await?;
             }
             Command::RDROP { key }=>{
-                let mut aof = aof.lock().await;
-                aof.append(&format!("RDROP {}",key))?;
-                drop(aof);
                 if let Some(val) = store.rdrop(&key).await{
                     writer.write_all(val.as_bytes()).await?;
                     writer.write_all(b"\n").await?;
@@ -145,8 +123,12 @@ QUIT
                 }
             }
             Command::RewriteAof => {
-                let _aof = aof.lock().await;
+                let mut aof = store.aof.lock().await;
+                aof.writer.flush()?; 
+                drop(aof);  
                 crate::aof::Aof::rewrite(&store)?;
+                let mut aof = store.aof.lock().await;
+                aof.reopen()?;
                 writer.write_all(b"AOF rewrite completed\n").await?;
             }
             Command::Unknown(name) => {
