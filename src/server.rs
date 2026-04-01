@@ -4,10 +4,11 @@ use std::{fs::File, io::{BufRead, BufReader}};
 
 use tokio::{net::TcpListener};
 use crate::{ handler, store::Store};
+use crate::stats::Stats;
 
 
 
-pub async fn run(addr : &str, store:Store) -> Result<(),Box<dyn std::error::Error>>{
+pub async fn run(addr : &str, store:Store, stats:Stats) -> Result<(),Box<dyn std::error::Error>>{
     let listener = TcpListener::bind(addr).await?;
 
 
@@ -29,13 +30,14 @@ if let Ok(file) = File::open("appendonly.aof") {
     loop{
         let (socket, peer_addr) = listener.accept().await?;
         let store = store.clone();
+        let stats = stats.clone();  
+        stats.incr_clients();
         
-
 
         println!("Client connected: {}",peer_addr);
 
         tokio::spawn(async move{
-            handler::handle_client(socket, store).await.ok();
+            handler::handle_client(socket, store,stats).await.ok();
         });
 
     }

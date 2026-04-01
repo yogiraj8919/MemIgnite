@@ -4,6 +4,7 @@ mod command;
 mod parser;
 mod store;
 mod aof;
+mod stats;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -22,8 +23,9 @@ async fn main() {
     let store = Store::new(aof.clone());
 
     store.clone().start_expiration_task();
+    let stats = stats::Stats::new();
 
-    if let Err(e) = server::run(addr, store).await {
+    if let Err(e) = server::run(addr, store,stats).await {
         eprintln!("Server error: {}", e);
     }
 }

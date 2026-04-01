@@ -10,5 +10,6 @@ pub enum Command {
     Help,
     Quit,
     Unknown(String),
-    RewriteAof
+    RewriteAof,
+    Info
 }

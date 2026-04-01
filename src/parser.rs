@@ -75,6 +75,7 @@ pub fn parse_command(input:&str) -> Command{
         "ECHO" => Command::Echo(parts.collect::<Vec<_>>().join(" ")),
         "QUIT" => Command::Quit,
         "REWRITEAOF" => Command::RewriteAof,
+        "INFO" => Command::Info,
         other=> Command::Unknown(other.to_string()),
     }
 }

@@ -6,11 +6,12 @@ use tokio::{
 use std::io::Write;
 
 use std::{ time::Duration};
+use crate::stats::Stats;
 
 
 use crate::{ command::Command, parser, store::Store};
 
-pub async fn handle_client(socket: TcpStream,store:Store) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn handle_client(socket: TcpStream,store:Store,stats:Stats) -> Result<(), Box<dyn std::error::Error>> {
     let (reader, mut writer) = socket.into_split();
     let mut reader = BufReader::new(reader);
 
@@ -46,6 +47,7 @@ Type 'help' to see available commands.
             // client closed connection
             break;
         }
+        stats.incr_commands(); 
 
         let cmd = parser::parse_command(&line);
 
@@ -129,7 +131,58 @@ QUIT
                 crate::aof::Aof::rewrite(&store)?;
                 let mut aof = store.aof.lock().await;
                 aof.reopen()?;
+                stats.incr_rewrite(); 
                 writer.write_all(b"AOF rewrite completed\n").await?;
+            }
+            Command::Info => {
+                let total_keys = store.inner.len();
+
+                let mut string_keys = 0;
+                let mut list_keys = 0;
+                let mut expiring_keys = 0;
+
+                for item in store.inner.iter(){
+                    let entry = item.value();
+
+                    if entry.expires_at.is_some(){
+                        expiring_keys += 1;
+                    }
+
+                    match &entry.value {
+                        crate::store::Value::String(_) => {string_keys += 1},
+                        crate::store::Value::List(_) => {list_keys += 1}
+                    }
+                }
+
+                let aof_size = std::fs::metadata("appendonly.aof")
+                .map(|m| m.len())
+                .unwrap_or(0);
+
+                let info = format!(
+                                     "\n# MemIgnite Stats\n\
+                                     uptime: {}s\n\
+                                     total_keys: {}\n\
+                                     string_keys: {}\n\
+                                     list_keys: {}\n\
+                                     expiring_keys: {}\n\
+                                     commands_processed: {}\n\
+                                     clients_connected: {}\n\
+                                     aof_size: {} bytes\n\
+                                     rewrite_count: {}\n\n",
+                                             stats.uptime(),
+                                             total_keys,
+                                             string_keys,
+                                             list_keys,
+                                             expiring_keys,
+                                             stats.commands_processed.load(std::sync::atomic::Ordering::Relaxed),
+                                             stats.clients_connected.load(std::sync::atomic::Ordering::Relaxed),
+                                             aof_size,
+                                             stats.rewrite_count.load(std::sync::atomic::Ordering::Relaxed),
+                );
+
+            writer.write_all(info.as_bytes()).await?;
+
+                
             }
             Command::Unknown(name) => {
                 writer
