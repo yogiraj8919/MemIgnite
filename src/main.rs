@@ -11,6 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::aof::{ Aof,FsyncPolicy};
 use crate::store::Store;
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() {
@@ -20,9 +21,20 @@ async fn main() {
     println!("MemIgnite is Listening on {}", addr);
 
     let aof = Arc::new(Mutex::new(Aof::new(FsyncPolicy::EverySec)));
-    let store = Store::new(aof.clone());
+    let (aof_tx, mut aof_rx) = mpsc::unbounded_channel::<String>();
 
+    let aof_clone = aof.clone();
+
+    tokio::spawn(async move{
+        while let Some(cmd) = aof_rx.recv().await{
+            let mut aof = aof_clone.lock().await;
+            aof.append(&cmd).ok();
+        }
+    });
+
+    let store= Store::new(aof.clone(), aof_tx);
     store.clone().start_expiration_task();
+
     let stats = stats::Stats::new();
 
     if let Err(e) = server::run(addr, store,stats).await {

@@ -4,6 +4,7 @@ use tokio::time::interval;
 
 use tokio::sync::Mutex;
 
+use tokio::sync::mpsc;
 
 use dashmap::{DashMap};
 
@@ -15,7 +16,8 @@ use crate::aof::Aof;
 pub struct Store{
     pub inner:Arc<DashMap<String,Entry>>,
     expirations:Arc<Mutex<BinaryHeap<EntryItem>>>,
-    pub aof: Arc<Mutex<Aof>>
+    pub aof: Arc<Mutex<Aof>>,
+    pub aof_tx: mpsc::UnboundedSender<String>,
 }
 
 #[derive(Clone)]
@@ -59,11 +61,12 @@ impl Eq for EntryItem {}
 
 
 impl Store {
-     pub fn new(aof:Arc<Mutex<Aof>>) -> Self{
+     pub fn new(aof:Arc<Mutex<Aof>>, aof_tx: mpsc::UnboundedSender<String>) -> Self{
         Store{
             inner : Arc::new(DashMap::new()),
             expirations:Arc::new(Mutex::new(BinaryHeap::new())),
-            aof
+            aof,
+            aof_tx
         }
     }
 
@@ -72,16 +75,16 @@ impl Store {
 
         self.set_internal(key.clone(), value.clone(), ttl).await;
 
-        let mut aof = self.aof.lock().await;
+        
 
         if let Some(expire) = ttl{
             let expire_ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() + expire.as_secs();
-            aof.append(&format!("SET {} {} EXAT {}",key,value,expire_ts)).ok();
+            self.aof_tx.send(format!("SET {} {} EXAT {}",key,value,expire_ts)).ok();
         }else{
-            aof.append(&format!("SET {} {}",key,value)).ok();
+            self.aof_tx.send(format!("SET {} {}",key,value)).ok();
         }
     }
 
@@ -118,8 +121,8 @@ impl Store {
          1
       };
 
-      let mut aof = self.aof.lock().await;
-      aof.append(&format!("LPUSH {} {}",key,value)).ok();
+      
+      self.aof_tx.send(format!("LPUSH {} {}",key,value)).ok();
 
       len
 
@@ -136,8 +139,8 @@ impl Store {
         };
 
         if result.is_some(){
-            let mut aof = self.aof.lock().await;
-            aof.append(&format!("RDROP {}",key)).ok();
+            
+            self.aof_tx.send(format!("RDROP {}",key)).ok();
         }
 
         result
@@ -181,8 +184,8 @@ impl Store {
             let mut heap = self.expirations.lock().await;
             heap.retain(|item| item.key != key);
 
-            let mut aof = self.aof.lock().await;
-            aof.append(&format!("DEL {}",key)).ok();
+            
+            self.aof_tx.send(format!("DEL {}",key)).ok();
         }
         removed
     }
