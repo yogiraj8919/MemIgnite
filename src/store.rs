@@ -18,6 +18,7 @@ pub struct Store{
     expirations:Arc<Mutex<BinaryHeap<EntryItem>>>,
     pub aof: Arc<Mutex<Aof>>,
     pub aof_tx: mpsc::UnboundedSender<String>,
+    pub max_keys:usize
 }
 
 #[derive(Clone)]
@@ -29,7 +30,8 @@ pub enum Value{
 #[derive(Clone)]
 pub struct Entry{
     pub value:Value,
-    pub expires_at:Option<u64>
+    pub expires_at:Option<u64>,
+    pub last_acces: u64
 }
 
 
@@ -66,7 +68,8 @@ impl Store {
             inner : Arc::new(DashMap::new()),
             expirations:Arc::new(Mutex::new(BinaryHeap::new())),
             aof,
-            aof_tx
+            aof_tx,
+            max_keys:3
         }
     }
 
@@ -88,7 +91,16 @@ impl Store {
         }
     }
 
+    fn now_secs() -> u64 {
+        SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+    }
+
+
     async fn set_internal(&self, key:String, value:String, ttl:Option<Duration>){
+        self.evict_lru_if_needed();
         let expires_at = ttl.map(|d|{
             SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -96,7 +108,7 @@ impl Store {
             .as_secs() + d.as_secs()
         });
 
-        self.inner.insert(key.clone(), Entry { value: Value::String(value), expires_at });
+        self.inner.insert(key.clone(), Entry { value: Value::String(value), expires_at,last_acces:Self::now_secs() });
         
         if let Some(expire) = expires_at {
             let mut heap = self.expirations.lock().await;
@@ -116,7 +128,7 @@ impl Store {
       }else{
         let mut new_list = VecDeque::new();
         new_list.push_front(value.clone());
-        self.inner.insert(key.clone(), Entry { value: Value::List(new_list), expires_at: None }
+        self.inner.insert(key.clone(), Entry { value: Value::List(new_list), expires_at: None,last_acces:Self::now_secs() }
         );
          1
       };
@@ -152,7 +164,7 @@ impl Store {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
            .as_secs();
         
-        if let Some(entry) = self.inner.get(key){
+        if let Some(mut entry) = self.inner.get_mut(key){
             if let Some(expire) = entry.expires_at{
                 if now >= expire{
                     drop(entry); 
@@ -165,7 +177,8 @@ impl Store {
                 }
                
             }
-  
+
+            entry.last_acces = Self::now_secs();
 
             match &entry.value{
                 Value::String(s) => {
@@ -261,6 +274,27 @@ impl Store {
         .iter()
         .map(|item| (item.key().clone(), item.value().clone()))
         .collect()
+    }
+
+    pub fn evict_lru_if_needed(&self){
+        if self.inner.len() < self.max_keys{
+            return;
+        }
+        let mut oldest_key: Option<String> = None;
+        let mut oldest_time = u64::MAX;
+
+        for item in self.inner.iter(){
+            let access_time = item.value().last_acces;
+
+            if access_time < oldest_time{
+                oldest_time = access_time;
+                oldest_key = Some(item.key().clone());
+            }
+        }
+
+        if let Some(key) = oldest_key {
+            self.inner.remove(&key);
+        }
     }
 
 }
