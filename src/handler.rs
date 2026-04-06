@@ -3,7 +3,6 @@ use tokio::{
     net::TcpStream,
 };
 
-use std::io::Write;
 
 use std::{ time::Duration};
 use crate::stats::Stats;
@@ -125,14 +124,13 @@ QUIT
                 }
             }
             Command::RewriteAof => {
-                let mut aof = store.aof.lock().await;
-                aof.writer.flush()?; 
-                drop(aof);  
-                crate::aof::Aof::rewrite(&store)?;
-                let mut aof = store.aof.lock().await;
-                aof.reopen()?;
-                stats.incr_rewrite(); 
-                writer.write_all(b"AOF rewrite completed\n").await?;
+                let snapshot = store.snapshot();
+                let stats = stats.clone();
+                tokio::spawn(async move{
+                    crate::aof::Aof::rewrite_from_snapshot(snapshot).ok();
+                    stats.incr_rewrite();
+                });
+                writer.write_all(b"Background AOF rewrite started\n").await?;
             }
             Command::Info => {
                 let total_keys = store.inner.len();

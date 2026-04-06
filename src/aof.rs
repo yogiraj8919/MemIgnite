@@ -4,9 +4,11 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::time::{Duration, Instant};
 
-use crate::store::{Store, Value};
+
+
 
 #[allow(unused)]
+
 #[derive(Clone, Copy)]
 pub enum FsyncPolicy {
     Always,
@@ -50,46 +52,34 @@ impl Aof {
         }
         Ok(())
     }
-    pub fn rewrite(store: &Store) -> std::io::Result<()>{
 
-        let file = File::create("temp-rewrite.aof")?;
-        let mut writer = BufWriter::new(file);
+    
 
-        for entry in store.inner.iter() {
-            let key = entry.key();
-            let val = entry.value();
+    pub fn rewrite_from_snapshot(snapshot:Vec<(String,crate::store::Entry)>) -> std::io::Result<()>{
+        use std::fs::File;
+        use std::io::{BufWriter,Write};
 
-            match &val.value {
-                Value::String(v) => {
-                    if let Some(exp) = val.expires_at {
-                        writeln!(writer,"SET {} {} EXAT {}",key,v,exp)?;
+        let temp_file = File::create("temp-rewrite.aof")?;
+        let mut writer = BufWriter::new(temp_file);
+
+        for (key,entry) in snapshot{
+            match entry.value {
+                crate::store::Value::String(val) => {
+                    if let Some(expire) = entry.expires_at{
+                        writeln!(writer,"SET {} {} EXAT {}", key, val, expire)?;
                     }else {
-                        writeln!(writer,"SET {} {}",key,v)?;
+                        writeln!(writer, "SET {} {}", key, val)?;
                     }
                 }
-                Value::List(list) => {
-                    for item in list{
-                        writeln!(writer,"LPUSH {} {}",key,item)?;
+                crate::store::Value::List(list) =>{
+                    for value in list{
+                        writeln!(writer,"LPUSH {} {}",key,value)?;
                     }
                 }
             }
         }
-
         writer.flush()?;
-
         std::fs::rename("temp-rewrite.aof", "appendonly.aof")?;
-
-        Ok(())
-
-    }
-
-    pub fn reopen(&mut self) -> std::io::Result<()> {
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("appendonly.aof")?;
-
-        self.writer = BufWriter::new(file);
         Ok(())
     }
 }

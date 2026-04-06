@@ -10,7 +10,7 @@ use dashmap::{DashMap};
 
 use crate::aof::Aof;
 
-
+#[allow(unused)]
 
 #[derive(Clone)]
 pub struct Store{
@@ -26,7 +26,7 @@ pub enum Value{
     List(VecDeque<String>)
 }
 
-
+#[derive(Clone)]
 pub struct Entry{
     pub value:Value,
     pub expires_at:Option<u64>
@@ -240,7 +240,7 @@ impl Store {
                    }
 
                    let remaining = expity_ts - now;
-                   self.set(key, value, Some(Duration::from_secs(remaining)))
+                   self.set_internal(key, value, Some(Duration::from_secs(remaining)))
                    .await;
                }else {
                    self.set_internal(key, value, None).await;
@@ -254,6 +254,13 @@ impl Store {
             _ =>{}
         }
 
+    }
+
+    pub fn snapshot(&self) -> Vec<(String, Entry)> {
+        self.inner
+        .iter()
+        .map(|item| (item.key().clone(), item.value().clone()))
+        .collect()
     }
 
 }
