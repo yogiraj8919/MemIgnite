@@ -1,318 +1,391 @@
-# 🧠 MemIgnite
+# 🧠 MemIgnite 🚀
 
-**Redis-Inspired In-Memory Key-Value Database (Rust)**
+**Redis-inspired high-performance in-memory key-value database engine built in Rust**
 
-**Author:** Saiyogiraj
-**Language:** Rust
-**Runtime:** Tokio
+MemIgnite is a Redis-inspired **high-performance in-memory key-value database engine** built in **Rust** for educational and systems engineering purposes.
 
----
+The project was designed to deeply understand how real-world cache engines and in-memory databases work internally — covering:
 
-# Overview
-
-**MemIgnite** is a Redis-inspired in-memory key-value database written in Rust.
-The project was built **for educational and learning purposes** to understand how modern databases are designed internally.
-
-The goal of this project is to explore important **systems and database engineering concepts** such as:
-
-* Async networking
-* Concurrent data structures
-* Key expiration strategies
-* Database persistence
-* Crash recovery
-* Log compaction
-* Storage engine architecture
-
-MemIgnite is not intended to replace Redis or production databases.
-Instead, it serves as a **learning project to study database internals and systems programming in Rust.**
+- async networking
+- concurrent state management
+- durability
+- crash recovery
+- TTL scheduling
+- background compaction
+- LRU eviction
+- observability
+- benchmarking
+- graceful shutdown
 
 ---
 
-# Key Learning Objectives
+# 🎯 Project Vision
 
-This project was built to gain hands-on experience with:
+MemIgnite was built as a **database internals + backend systems learning project**.
 
-• Building an **async TCP server** using Tokio
-• Designing a **concurrent in-memory storage engine**
-• Implementing **TTL expiration mechanisms**
-• Implementing **Append-Only File (AOF) persistence**
-• Understanding **crash recovery using log replay**
-• Implementing **log compaction (AOF Rewrite)**
-• Designing modular database architecture
+The goal was to explore how production systems like Redis balance:
 
----
+- speed ⚡
+- durability 💾
+- concurrency 🧵
+- memory control 🧠
+- graceful operations 🔄
 
-# System Architecture
-
-MemIgnite follows a layered architecture similar to real databases.
-
-```id="arch1"
-Client
-   │
-   ▼
-TCP Server (Tokio)
-   │
-   ▼
-Command Parser
-   │
-   ▼
-Command Handler
-   │
-   ▼
-Storage Engine
-   ├── DashMap (Concurrent Storage)
-   ├── TTL Expiration Scheduler
-   ├── Background Expiration Worker
-   └── Persistence Layer
-           │
-           ├── Append Only File (AOF)
-           └── AOF Rewrite (Log Compaction)
-```
+while keeping the codebase **clean, readable, and beginner-friendly**.
 
 ---
 
-# Features Implemented
+# ✨ Core Features
 
-## Async Networking
+## ⚡ Networking & Command Engine
+- Async TCP server using **Tokio**
+- Multi-client concurrent connections
+- Custom command parser
+- Interactive CLI via `nc`
+- Beginner-friendly command syntax
 
-MemIgnite uses the **Tokio runtime** to support multiple concurrent client connections.
+## 🗄️ Data Structures
+- String key-value storage
+- List support using `LPUSH` and `RDROP`
+- Concurrent storage with **DashMap**
 
-Each connection is handled asynchronously.
+## ⏳ TTL & Expiration
+- `EX` and `EXAT` support
+- Background expiration scheduler
+- Min-heap based expiry tracking
+- Lazy expiration validation on reads
 
----
+## 💾 Durability & Recovery
+- Append Only File (**AOF**) persistence
+- Configurable fsync policies:
+  - `Always`
+  - `EverySec`
+  - `No`
+- Startup replay recovery
+- Snapshot-based background AOF rewrite
 
-## Concurrent Storage Engine
+## 🚀 Performance Optimizations
+- Background AOF write queue using Tokio `mpsc`
+- Producer-consumer write pipeline
+- Reduced lock contention
+- Better concurrent write throughput
 
-The storage engine is built using **DashMap**, allowing concurrent reads and writes without global locking.
+## 🧠 Cache Features
+- LRU eviction with max key limit
+- Access-time metadata tracking
+- Automatic least-recently-used key eviction
 
-```id="store1"
-DashMap<String, Entry>
-```
+## 📊 Observability
+- Runtime `INFO` stats
+- Command counters
+- Client connection counters
+- Rewrite counters
+- Uptime tracking
 
-Each entry stores:
-
-```id="entry1"
-value
-optional expiration timestamp
-```
-
----
-
-# Supported Commands
-
-| Command                  | Description              |
-| ------------------------ | ------------------------ |
-| SET key value            | Store key-value pair     |
-| SET key value EX seconds | Store with expiration    |
-| GET key                  | Retrieve a value         |
-| DEL key                  | Delete a key             |
-| LPUSH key value          | Push value to list       |
-| RDROP key                | Remove rightmost element |
-| PING                     | Health check             |
-| ECHO message             | Echo message             |
-| REWRITEAOF               | Compact persistence log  |
-| HELP                     | Display help             |
-| QUIT                     | Close connection         |
-
----
-
-# TTL Expiration
-
-Keys can expire automatically using the `EX` option.
-
-Example:
-
-```id="ttl1"
-SET session_token abc EX 60
-```
-
-Two expiration strategies are implemented:
-
-### Lazy Expiration
-
-Keys are checked for expiration during read operations.
-
-### Background Expiration Worker
-
-A periodic task removes expired keys.
+## 🛑 Reliability
+- Graceful shutdown via `Ctrl+C`
+- Final AOF flush before exit
+- Clean persistence guarantees
 
 ---
 
-# Persistence: Append Only File (AOF)
+# 🛠️ Tech Stack
 
-MemIgnite uses an **append-only persistence log**.
+- **Language:** Rust
+- **Async Runtime:** Tokio
+- **Concurrent Store:** DashMap
+- **Persistence:** Append Only File (AOF)
+- **Channels / Queue:** Tokio mpsc
+- **Benchmarking:** Python (socket + threading)
+- **Client Testing:** netcat (`nc`)
+- **OS Support:** macOS / Linux / Windows (WSL)
 
-Every write operation is appended to:
-
-```id="aof1"
-appendonly.aof
-```
-
-Example log:
-
-```id="aof2"
-SET user raj
-SET age 24
-DEL age
-LPUSH users alice
-```
-
-This ensures durability and allows crash recovery.
-
----
-
-# Crash Recovery
-
-When the server restarts, MemIgnite **replays the AOF log** to rebuild the database state.
-
-Example replay:
-
-```id="replay1"
-SET a 1
-SET a 2
-SET a 3
-```
-
-Final state:
-
-```id="replay2"
-a = 3
-```
-
----
-
-# AOF Rewrite (Log Compaction)
-
-Over time the AOF file grows due to repeated operations.
-
-MemIgnite supports **log compaction** using the `REWRITEAOF` command.
-
-Before rewrite:
-
-```id="rewrite1"
-SET a 1
-SET a 2
-SET a 3
-SET a 4
-```
-
-After rewrite:
-
-```id="rewrite2"
-SET a 4
-```
+### 🔍 Why DashMap?
+DashMap was chosen for **sharded concurrent reads/writes** with much lower contention than a single global mutex.
 
 Benefits:
-
-• Reduced disk usage
-• Faster database startup
-• Removes redundant operations
+- multiple clients can access different keys in parallel
+- improves throughput under mixed workloads
+- scales better in write-heavy benchmarks
+- ideal for multi-client TCP workloads
 
 ---
 
-# Example Session
+# 📁 Project Structure
 
-```id="cli1"
+```text
+src/
+├── main.rs        # bootstrap, AOF queue, graceful shutdown
+├── server.rs      # TCP listener + connection lifecycle
+├── handler.rs     # command execution per client
+├── parser.rs      # raw text → Command enum
+├── command.rs     # supported command definitions
+├── store.rs       # DashMap store, TTL, LRU, AOF enqueue
+├── aof.rs         # append, recovery, rewrite, fsync policies
+├── stats.rs       # runtime metrics and uptime
+└── benchmark.py   # multi-client benchmark workloads
+```
+
+---
+
+# 🧠 Supported Commands
+
+```text
+SET <key> <value>
+SET <key> <value> EX <seconds>
+SET <key> <value> EXAT <unix_timestamp>
+GET <key>
+DEL <key>
+
+LPUSH <key> <value>
+RDROP <key>
+
+INFO
+REWRITEAOF
+
+PING
+ECHO <message>
+HELP
+QUIT
+```
+
+---
+
+# 🏗️ Architecture Diagram
+
+```text
+                        ┌────────────────────┐
+                        │    TCP Clients      │
+                        │  nc / benchmark.py  │
+                        └─────────┬──────────┘
+                                  │
+                                  ▼
+                        ┌────────────────────┐
+                        │ Tokio TCP Listener  │
+                        │   async accept()    │
+                        └─────────┬──────────┘
+                                  │
+                                  ▼
+                        ┌────────────────────┐
+                        │   Command Parser    │
+                        │ parse_command()     │
+                        └─────────┬──────────┘
+                                  │
+                                  ▼
+               ┌────────────────────────────────────────┐
+               │                Store                    │
+               │  DashMap + TTL Heap + LRU Metadata     │
+               └──────┬───────────────┬────────────────┘
+                      │               │
+                      │               └──────────────┐
+                      ▼                              ▼
+         ┌────────────────────┐         ┌────────────────────────┐
+         │ Expiration Worker  │         │   INFO / Metrics       │
+         │ Background cleanup │         │ Stats + Uptime         │
+         └────────────────────┘         └────────────────────────┘
+                      │
+                      ▼
+         ┌──────────────────────────────┐
+         │   AOF Queue (mpsc channel)   │
+         │ producer-consumer pipeline    │
+         └──────────────┬───────────────┘
+                        │
+                        ▼
+         ┌──────────────────────────────┐
+         │ Background AOF Writer Task   │
+         │ async append + fsync policy  │
+         └──────────────┬───────────────┘
+                        │
+                        ▼
+         ┌──────────────────────────────┐
+         │      appendonly.aof          │
+         │ crash recovery source        │
+         └──────────────────────────────┘
+```
+
+---
+
+# 🗺️ DashMap Concurrency Architecture
+
+```text
+                    ┌──────────────────────────────┐
+                    │         DashMap Store         │
+                    │   sharded concurrent hashmap  │
+                    └──────────────┬───────────────┘
+                                   │
+        ┌───────────────┬──────────┼──────────┬───────────────┐
+        ▼               ▼          ▼          ▼               ▼
+   ┌────────┐      ┌────────┐ ┌────────┐ ┌────────┐     ┌────────┐
+   │Shard 0 │      │Shard 1 │ │Shard 2 │ │Shard 3 │ ... │Shard N │
+   └────┬───┘      └────┬───┘ └────┬───┘ └────┬───┘     └────┬───┘
+        │               │          │          │               │
+        ▼               ▼          ▼          ▼               ▼
+   different keys can be read/written in parallel by different clients
+```
+
+### 🔍 Why DashMap improves MemIgnite
+Instead of protecting the full store with one global mutex, DashMap internally splits data into multiple shards.
+
+This significantly reduces contention for:
+- mixed workloads
+- write-heavy benchmarks
+- multi-client stress tests
+
+---
+
+# 📜 AOF Persistence Architecture
+
+```text
+Write Command
+   ↓
+Store updates in-memory DashMap
+   ↓
+Raw command pushed into mpsc AOF queue
+   ↓
+Background writer task consumes queue
+   ↓
+appendonly.aof
+   ↓
+Crash recovery replays commands on startup
+   ↓
+Background REWRITEAOF compacts file using store snapshot
+```
+
+### 🔍 Why AOF matters
+The Append Only File is MemIgnite’s durability layer.
+
+It ensures:
+- writes survive process restarts
+- crash recovery restores database state
+- rewrite removes redundant historical commands
+- fsync policy balances durability vs throughput
+
+---
+
+# 💾 Storage Flow
+
+```text
+Client Command
+   ↓
+Parser converts raw input into Command enum
+   ↓
+Handler validates and routes operation
+   ↓
+Store updates DashMap in-memory state
+   ↓
+TTL metadata updated (if EX / EXAT)
+   ↓
+LRU access metadata updated
+   ↓
+AOF command sent to mpsc queue
+   ↓
+Background writer persists to appendonly.aof
+   ↓
+Fsync policy decides flush behavior
+```
+
+---
+
+# 🚀 Getting Started
+
+## Run the server
+```bash
+cargo run
+```
+
+## Connect as client
+```bash
+nc 127.0.0.1 6379
+```
+
+---
+
+# 📌 Example Session
+
+```text
 SET name raj
 OK
 
 GET name
 raj
 
-LPUSH users alice
-1
-
-LPUSH users bob
-2
-
-RDROP users
-alice
-
-SET token abc EX 10
+SET session token123 EX 60
 OK
 
-REWRITEAOF
-AOF rewrite completed
-```
+LPUSH nums 1
+1
 
----
+RDROP nums
+1
 
-# Project Structure
-
-```id="structure1"
-src/
-
-main.rs        → Entry point
-server.rs      → TCP server
-handler.rs     → Command handling
-parser.rs      → Command parser
-command.rs     → Command definitions
-store.rs       → Storage engine
-aof.rs         → Persistence and log rewrite
-```
-
----
-
-# Running the Project
-
-### Clone repository
-
-```id="run1"
-git clone <repo-url>
-cd memignite
-```
-
-### Start the server
-
-```id="run2"
-cargo run
-```
-
-### Connect to the database (client)
-
-After starting the server, connect using **netcat**:
-
-```id="run3"
-nc 127.0.0.1 6379
-```
-
-You can now run commands in the MemIgnite CLI.
-
-Example:
-
-```id="run4"
-SET name raj
-GET name
-LPUSH users alice
+INFO
 REWRITEAOF
 ```
 
 ---
 
-# Educational Purpose
+# 📈 Benchmark Results
 
-MemIgnite is a **learning project designed to understand database internals and systems programming concepts using Rust**.
+Validated with **100 concurrent clients × 1000 operations each**.
 
-It demonstrates how core database features such as persistence, concurrency, expiration, and log compaction can be implemented from scratch.
+| Workload | Throughput | Avg Latency | P95 Latency |
+|---|---:|---:|---:|
+| Write-heavy | 9.2k ops/sec | 10.6 ms | 21 ms |
+| Mixed | 6.0k ops/sec | 16.3 ms | 31 ms |
+| Read-heavy | 3.5k ops/sec | 28.2 ms | 48 ms |
 
-The project focuses on **understanding system design and database architecture rather than production use.**
-
----
-
-# Future Improvements
-
-Planned features include:
-
-• INFO command for server metrics
-• RESP protocol support
-• Redis CLI compatibility
-• Performance benchmarking
-• Snapshot persistence
-• Replication support
-• Memory usage metrics
+### 🔍 Observation
+Read-heavy appears slower because `INFO` performs full-store scans, making it more expensive than normal point reads.
 
 ---
 
-# License
+# 📚 Engineering Concepts Explored
 
-This project is intended for **educational and learning purposes only**.
+- async TCP server design
+- concurrent shared state
+- lock contention reduction
+- producer-consumer architecture
+- durability vs performance trade-offs
+- WAL / AOF persistence
+- crash recovery
+- snapshot-based background compaction
+- LRU eviction strategies
+- graceful shutdown coordination
+- benchmark-driven optimization
+
+---
+
+# 🎯 Future Improvements
+
+- RESP protocol support
+- Redis CLI compatibility
+- RDB-style periodic snapshots
+- follower replication
+- shard-aware clustering
+- O(1) linked LRU
+- advanced list commands
+- pipelining support
+
+---
+
+# 📚 Educational Purpose
+
+MemIgnite is built primarily for:
+- learning Rust async systems programming
+- understanding database internals
+- practicing backend performance engineering
+- building recruiter-friendly systems projects
+
+---
+
+# 👨‍💻 Author Note
+
+This project was designed and implemented by **Saiyogiraj** as a hands-on systems engineering and database internals learning project.
+
+While inspired by Redis design principles, **MemIgnite is an original educational implementation built from scratch in Rust** with:
+
+- clean architecture
+- beginner-friendly systems concepts
+- measurable performance validation
+
+It serves as both a **deep learning exercise** and a **portfolio-grade backend systems project**.
