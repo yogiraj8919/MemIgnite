@@ -6,6 +6,7 @@ mod store;
 mod aof;
 mod stats;
 
+use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -37,9 +38,24 @@ async fn main() {
 
     let stats = stats::Stats::new();
 
-    if let Err(e) = server::run(addr, store,stats).await {
-        eprintln!("Server error: {}", e);
+    tokio::select! {
+        result = server::run(addr,store.clone(),stats) => {
+            if let Err(e) = result{
+                eprintln!("Server error: {}", e);
+            }
+        },
+
+        _ = tokio::signal::ctrl_c() => {
+            println!("\n Graceful shutdown started...");
+        }
     }
+
+    {
+        let mut aof = aof.lock().await;
+        aof.writer.flush().ok();
+    }
+
+    println!("🧠 MemIgnite preserved state and went offline cleanly.");
 }
 
 fn print_banner() {
